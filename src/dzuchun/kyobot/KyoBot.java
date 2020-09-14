@@ -135,7 +135,7 @@ public class KyoBot extends ListenerAdapter {
 	public void onMessageReceived(MessageReceivedEvent event) {
 		super.onMessageReceived(event);
 		if ((event.getChannelType() == ChannelType.PRIVATE) && !jda.getPrivateChannels().contains(event.getChannel())) {
-			LOGGER.error("Hurray, recieve message in non-existent private channel");
+			LOGGER.error("Hurray, recieved message in non-existent private channel");
 		}
 		User author = event.getAuthor();
 		if ((event.getMessage().getContentDisplay().charAt(0) != '!')) {
@@ -225,7 +225,7 @@ public class KyoBot extends ListenerAdapter {
 				break;
 			case "!stop":
 				LOGGER.warn("Admin {}({}) asked me to stop. Stopping...", author.getName(), authorId);
-				author.openPrivateChannel().flatMap(channel -> channel.sendMessage("K, i'm shutting down..."))
+				author.openPrivateChannel().flatMap(channel -> channel.sendMessage("Bla-bla-bla, im going sleeep..."))
 						.complete();
 				stop();
 				break;

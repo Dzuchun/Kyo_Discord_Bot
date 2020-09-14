@@ -1,0 +1,2 @@
+javac -cp .\dep\* -sourcepath .\src\ -d .\bin\ src\dzuchun\kyobot\KyoBot.java
+java -Xmx30M -classpath ".\bin;.\dep\JDA-4.2.0_168-withDependencies.jar;.\dep\logback-classic-1.2.3.jar;.\dep\logback-core-1.2.3.jar;.\dep\guava-23.0.jar" dzuchun.kyobot.KyoBot token.txt
