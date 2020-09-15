@@ -5,12 +5,18 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.InputMismatchException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 
+import javax.annotation.Nullable;
 import javax.security.auth.login.LoginException;
 
 import org.slf4j.Logger;
@@ -22,6 +28,7 @@ import dzuchun.util.ArrayHelper;
 import dzuchun.util.SavedArrayList;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.MessageBuilder;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.ChannelType;
 import net.dv8tion.jda.api.entities.Message;
@@ -91,27 +98,26 @@ public class KyoBot extends ListenerAdapter {
 			});
 
 	public static void main(String[] args) throws InterruptedException, IOException {
-		if (args.length < 1) {
-			LOGGER.error("You must specify path to file with API token");
+		if (args.length < 1 || (args.length < 2 && args[0].equals("_"))) {
+			LOGGER.error("You must specify path to file with API token, or \"_\" and specify it as second argument");
 			System.exit(-1);
 		}
-		Scanner sc = new Scanner(System.in);
 		try {
-			Scanner tokenSearcher = new Scanner(new File(args[0]));
-			final String TOKEN = tokenSearcher.nextLine();
-			tokenSearcher.close();
+			String TOKEN = null;
+			if (!args[0].equals("_")) {
+				Scanner tokenSearcher = new Scanner(new File(args[0]));
+				TOKEN = tokenSearcher.nextLine();
+				tokenSearcher.close();
+			} else {
+				LOGGER.info("Specify API token: ");
+				TOKEN = args[1];
+			}
 			jda = JDABuilder.createDefault(TOKEN).addEventListeners(new KyoBot()).setActivity(Activity.listening("HTT"))
 					.build();
 			jda.awaitReady();
 			ADMINISTRATORS.load();
 			if (ADMINISTRATORS.isEmpty()) {
-				LOGGER.warn("No administrator specified, please specify one if you want:");
-				try {
-					ADMINISTRATORS.add(sc.nextLong());
-				} catch (InputMismatchException e) {
-					e.printStackTrace();
-					System.exit(-1);
-				}
+				LOGGER.warn("No administrator specified");
 			}
 			LOGGER.info("Loaded administators:\n{}", ADMINISTRATORS.toString());
 			loadHelpString();
@@ -128,7 +134,6 @@ public class KyoBot extends ListenerAdapter {
 			System.exit(-1);
 		}
 		LOGGER.info("Kyo logged in!");
-		sc.close();
 	}
 
 	@Override
@@ -137,205 +142,27 @@ public class KyoBot extends ListenerAdapter {
 		if ((event.getChannelType() == ChannelType.PRIVATE) && !jda.getPrivateChannels().contains(event.getChannel())) {
 			LOGGER.error("Hurray, recieved message in non-existent private channel");
 		}
-		User author = event.getAuthor();
-		if ((event.getMessage().getContentDisplay().charAt(0) != '!')) {
+		Message message = event.getMessage();
+		String content = message.getContentDisplay();
+		if ((content.charAt(0) != '!') || content.length() < 2) {
 			return;
 		}
-		LOGGER.debug("Recieved message:\n{}, in channel {}, type {}", event.getMessage(), event.getChannel(),
-				event.getChannelType());
-		if (author.isBot()) {
-			LOGGER.debug("Message is from bot, ignoring...");
+
+		BotCommand command = BotCommand.get(content.split(" ")[0].substring(1));
+
+		command = command == null ? BotCommand.help : command;
+
+		if (command.shouldIgnore(message)) {
+			LOGGER.info("Ignoring");
 			return;
 		}
-		Long authorId = author.getIdLong();
-		if (ADMINISTRATORS.contains(authorId)) {
-			LOGGER.debug("Author is OP, executing...");
-			String text = event.getMessage().getContentDisplay();
-			String[] words = text.split(" ");
-			if (words.length < 1) {
-				return;
-			}
-			switch (words[0]) {
-			case "!aOp":
-				addOps(event.getMessage());
-				break;
-			case "!rOp":
-				removeOps(event.getMessage());
-				break;
-			case "!aChN":
-				if (words.length < 3) {
-					this.displayHelp(author);
-				} else {
-					this.addChannelName(words[1], words[2]);
-				}
-				break;
-			case "!rChN":
-				if (words.length < 2) {
-					this.displayHelp(author);
-				} else {
-					this.removeChannelName(words[1]);
-				}
-				break;
-			case "!dChN":
-				author.openPrivateChannel()
-						.flatMap(channel -> channel.sendMessageFormat("All channel names:\n%s",
-								ArrayHelper.iterableToString(CHANNEL_NAMES, name -> name.toString().concat("\n"))))
-						.complete();
-				break;
-			case "!sDel":
-				if (words.length < 4) {
-					// TODO display syntax
-					this.displayHelp(author);
-				} else {
-					this.sendDelayed(words[1], words[2], words[3], author);
-				}
-				break;
-			case "!sSch":
-				if (words.length < 4) {
-					// TODO display syntax
-					this.displayHelp(author);
-				} else {
-					this.sendScheduled(words[1], words[2], words[3], author);
-				}
-				break;
-			case "!nMes":
-				Message msg = event.getMessage();
-				author.openPrivateChannel()
-						.flatMap(channel -> channel
-								.sendMessage(String.format("Message \"%s\" in chat \"%s\", from server \"%s\"",
-										msg.getContentDisplay(), msg.getChannel().getName(), msg.getGuild().getName())))
-						.complete();
-				break;
-			case "!intL":
-				if (words.length < 2) {
-					return;
-				}
-				String link = words[1];
-				Coords coords = new Coords(link);
-				if ((coords.guild == null) || (coords.channel == null) || (coords.message == null)) {
-					author.openPrivateChannel().flatMap(channel -> channel.sendMessage("Invalid link")).complete();
-				} else {
-					author.openPrivateChannel()
-							.flatMap(channel -> channel
-									.sendMessage(String.format("Message \"%s\" in chat \"%s\", from server \"%s\"",
-											coords.message.getContentDisplay(), coords.channel.getName(),
-											coords.guild.getName())))
-							.complete();
-				}
-				break;
-			case "!stop":
-				LOGGER.warn("Admin {}({}) asked me to stop. Stopping...", author.getName(), authorId);
-				author.openPrivateChannel().flatMap(channel -> channel.sendMessage("K, shutting down...")).complete();
-				stop();
-				break;
-			case "!help":
-			default:
-				LOGGER.debug("Displaying help to {}", authorId);
-				this.displayHelp(author);
-			}
+
+		Message response = command.process(message);
+		if (response != null) {
+			event.getAuthor().openPrivateChannel().flatMap(channel -> channel.sendMessage(response)).submit();
 		} else {
-			LOGGER.debug("Author is not an OP, ignoring...");
-			return;
+			LOGGER.info("Response is null, so I don't send it :)");
 		}
-	}
-
-	private void sendScheduled(String channelNameIn, String messageLinkIn, String dateIn, User authorIn) {
-		Date date = null;
-		try {
-			date = new SimpleDateFormat("yyyy/MM/dd_hh:mm:ss").parse(dateIn);
-		} catch (ParseException e) {
-			LOGGER.warn("Specified date is invalid: {}, format - yyyy/MM/dd_hh:mm:ss", dateIn);
-			return;
-		}
-		if (!CHANNEL_NAMES.anyMatches(n -> n.name.equals(channelNameIn))) {
-			LOGGER.warn("Specified channel name does not exist: {}", channelNameIn);
-			return;
-		}
-		TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.name.equals(channelNameIn)).getChannel(jda);
-		Coords coords = new Coords(messageLinkIn);
-		if (coords.message == null) {
-			LOGGER.warn("Invalid message link");
-			return;
-		}
-		LOGGER.debug("Sending scheduled message {} to channel {} at date {}", coords.message, channel, date.toString());
-		StringBuilder builder = new StringBuilder();
-		builder.append(String.format("Scheduled message from %s:\n", authorIn.getAsMention()));
-		builder.append(coords.message.getContentDisplay());
-		channel.sendMessage(builder.toString()).submitAfter(date.getTime() - System.currentTimeMillis(),
-				TimeUnit.MILLISECONDS);
-	}
-
-	private void sendDelayed(String channelNameIn, String messageLinkIn, String delayIn, User authorIn) {
-		long delay = -1;
-		try {
-			delay = Long.parseLong(delayIn);
-		} catch (NumberFormatException e) {
-			LOGGER.warn("Specified delay is not a number: {}", delayIn);
-			return;
-		}
-		if (!CHANNEL_NAMES.anyMatches(n -> n.name.equals(channelNameIn))) {
-			LOGGER.warn("Specified channel name does not exist: {}", channelNameIn);
-			return;
-		}
-		TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.name.equals(channelNameIn)).getChannel(jda);
-		Coords coords = new Coords(messageLinkIn);
-		if (coords.message == null) {
-			LOGGER.warn("Invalid message link");
-			return;
-		}
-		LOGGER.debug("Sending delayed message {} to channel {} with delay {}", coords.message, channel, delay);
-		StringBuilder messageBuilder = new StringBuilder()
-				.append(String.format("Delayed message from %s:\n", authorIn.getAsMention()));
-		messageBuilder.append(coords.message.getContentDisplay());
-		channel.sendMessage(messageBuilder.toString()).submitAfter(delay, TimeUnit.SECONDS);
-	}
-
-	private void removeChannelName(String nameIn) {
-		CHANNEL_NAMES.removeIf(name -> name.name.equals(nameIn));
-		LOGGER.info("Removed channels with name {}", nameIn);
-	}
-
-	private void addChannelName(String linkIn, String nameIn) {
-		Coords coords = new Coords(linkIn);
-		if (coords.channel == null) {
-			LOGGER.warn("Link is invalid: {}", linkIn);
-		} else {
-			CHANNEL_NAMES.add(new ChannelName(nameIn, coords.channel.getIdLong()));
-			LOGGER.info("Added channel {} to names as {}", coords.channel, nameIn);
-		}
-	}
-
-	private static void addOps(Message message) {
-		message.getMentionedUsers().forEach(user -> ADMINISTRATORS.add(user.getIdLong()));
-		LOGGER.debug("Added ops {}", message.getMentionedUsers());
-	}
-
-	private static void removeOps(Message message) {
-		ADMINISTRATORS.removeIf(id -> ArrayHelper.map(message.getMentionedUsers(), User::getIdLong).contains(id));
-		LOGGER.debug("Removed ops {}", message.getMentionedUsers());
-	}
-
-	private static void stop() {
-		jda.shutdownNow();
-		try {
-			ADMINISTRATORS.save();
-		} catch (IOException e) {
-			LOGGER.error("Failed to save admins:");
-			e.printStackTrace();
-		}
-		try {
-			GUILD_NAMES.save();
-		} catch (IOException e) {
-			LOGGER.error("Failed to save guild names:");
-			e.printStackTrace();
-		}
-		try {
-			CHANNEL_NAMES.save();
-		} catch (IOException e) {
-			LOGGER.error("Failed to save channel names:");
-			e.printStackTrace();
-		}
-		LOGGER.info("Kyo wanna sleep...");
 	}
 
 	private static void loadHelpString() throws FileNotFoundException {
@@ -352,11 +179,248 @@ public class KyoBot extends ListenerAdapter {
 		}
 	}
 
-	private void displayHelp(User author) {
-		if (HELP_STRING.isEmpty()) {
-			LOGGER.debug("Help string is empty, can't display help");
-			return;
+	public static boolean ifAdmin(User user) {
+		return ADMINISTRATORS.contains(user.getIdLong());
+	}
+
+	public static boolean ifAdmin(Message message) {
+		return ADMINISTRATORS.contains(message.getAuthor().getIdLong());
+	}
+
+	public static String[] getWords(Message messageIn) {
+		return messageIn.getContentDisplay().split(" ");
+	}
+
+	enum BotCommand {
+		aOp("!aOp <mentions>, example: !aOp @Dzuchun") {
+
+			@Override
+			Message process(Message messageIn) {
+				List<User> mentions = messageIn.getMentionedUsers();
+				mentions.forEach(user -> ADMINISTRATORS.add(user.getIdLong()));
+				String response = String.format("Added ops %s", mentions);
+				LOGGER.debug(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		rOp("!rOp <mentions>, example: !rOp @Code_Bullet :)") {
+
+			@Override
+			Message process(Message messageIn) {
+				List<User> mentions = messageIn.getMentionedUsers();
+				ADMINISTRATORS.removeIf(id -> ArrayHelper.map(mentions, User::getIdLong).contains(id)); // TODO
+																										// optimize
+																										// map
+				String response = String.format("Added ops %s", mentions);
+				LOGGER.debug(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		aChN("!aCh <message link> <name>, example: !aCh https://discordapp.com/channels/a1/a2/a3 news, where a1, a2, a3 are IDs. Note: multiple channels can be assigned to a single name") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = getWords(messageIn);
+				if (words.length < 3) {
+					return null;
+				}
+				String link = words[1];
+				Coords coords = new Coords(link);
+				if (coords.channel == null) {
+					LOGGER.warn("Link is invalid: {}", link);
+					return new MessageBuilder().append("Invalid link:").append(link).build();
+				} else {
+					String name = words[2];
+					CHANNEL_NAMES.add(new ChannelName(name, coords.channel.getIdLong()));
+					String response = String.format("Added channel %s to names as %s", coords.channel, name);
+					LOGGER.info(response);
+					return new MessageBuilder().append(response).build();
+				}
+			}
+
+		},
+		rChN("!rCh <name>, example: !rCh news. Note: multiple channels can be assigned to a single name") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = getWords(messageIn);
+				if (words.length < 2) {
+					return null;
+				}
+				String name = words[1];
+				CHANNEL_NAMES.removeIf(chName -> chName.name.equals(name));
+				String response = String.format("Removed channels with name %s", name);
+				LOGGER.info(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		dChN("!dChN") {
+
+			@Override
+			Message process(Message messageIn) {
+				MessageBuilder res = new MessageBuilder();
+				res.append("Channel names:\n");
+				for (ChannelName name : CHANNEL_NAMES) {
+					res.append(name.toString()).append("\n");
+				}
+				return res.build();
+			}
+
+		},
+		sDel("!sDel <channel name> <message link> <delay>, example: !sDel news https://discordapp.com/channels/a1/a2/a3 10, where a1, a2, a3 are IDs.") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = getWords(messageIn);
+				if (words.length < 4) {
+					return null;
+				}
+				long delay = -1;
+				try {
+					delay = Long.parseLong(words[3]);
+				} catch (NumberFormatException e) {
+					String response = String.format("Specified delay is not a number: %s", words[3]);
+					LOGGER.warn(response);
+					return new MessageBuilder().append(response).build();
+				}
+				if (!CHANNEL_NAMES.anyMatches(n -> n.name.equals(words[1]))) {
+					String response = String.format("Specified channel name does not exist: %s", words[1]);
+					LOGGER.warn(response);
+					return new MessageBuilder().append(response).build();
+				}
+				TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.name.equals(words[1])).getChannel(jda);
+				Coords coords = new Coords(words[2]);
+				if (coords.message == null) {
+					String response = String.format("Invalid message link: %s", words[2]);
+					LOGGER.warn(response);
+					return new MessageBuilder().append(response).build();
+				}
+				StringBuilder messageBuilder = new StringBuilder()
+						.append(String.format("Delayed message from %s:\n", messageIn.getAuthor().getAsMention()));
+				messageBuilder.append(coords.message.getContentDisplay());
+				channel.sendMessage(messageBuilder.toString()).submitAfter(delay, TimeUnit.SECONDS); // TODO repair
+																										// mentions
+
+				String response = String.format("Sending delayed message %s to channel %s with delay %s",
+						coords.message, channel, delay);
+				LOGGER.debug(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		sSch("!sSch <channel name> <message link> <date>, example: !sDel news https://discordapp.com/channels/a1/a2/a3 2020/04/02_07:45:34, where a1, a2, a3 are IDs.") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = getWords(messageIn);
+				Date date = null;
+				try {
+					date = new SimpleDateFormat("yyyy/MM/dd_hh:mm:ss").parse(words[3]);
+				} catch (ParseException e) {
+					String response = String.format("Specified date is invalid: %s, format - yyyy/MM/dd_hh:mm:ss",
+							words[3]);
+					LOGGER.warn(response);
+					return new MessageBuilder().append(response).build();
+				}
+				if (!CHANNEL_NAMES.anyMatches(n -> n.name.equals(words[1]))) {
+					String response = String.format("Specified channel name does not exist: %s", words[1]);
+					LOGGER.warn(response);
+					return new MessageBuilder().append(response).build();
+				}
+				TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.name.equals(words[1])).getChannel(jda);
+				Coords coords = new Coords(words[2]);
+				if (coords.message == null) {
+					String response = String.format("Invalid message link: %s", words[2]);
+					LOGGER.warn(response);
+					return new MessageBuilder().append(response).build();
+				}
+				StringBuilder builder = new StringBuilder();
+				builder.append(String.format("Scheduled message from %s:\n", messageIn.getAuthor().getAsMention()));
+				builder.append(coords.message.getContentDisplay());
+				long delay = date.getTime() - System.currentTimeMillis();
+				channel.sendMessage(builder.toString()).submitAfter(delay, TimeUnit.MILLISECONDS); // TODO repair
+																									// mentions
+				String response = String.format("Sending scheduled message %s to channel %s at date %s (in %s seconds)",
+						coords.message, channel, date.toString(), delay / 1000);
+				LOGGER.debug(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		help("!help, or anything started with \"!\", but not recognized as command") {
+
+			@Override
+			Message process(Message messageIn) {
+				return new MessageBuilder().append(KyoBot.HELP_STRING).build();
+			}
+		},
+		syn("!syn <command main literal>, example: !syn aOp") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = KyoBot.getWords(messageIn);
+				if (words.length < 2 || BotCommand.get(words[1]) == null) {
+					return null;
+				}
+				return new MessageBuilder().append("Syntax: ").append(BotCommand.get(words[1]).syntax).build();
+			}
+
+		},
+		stop("!stop") {
+
+			@Override
+			Message process(Message messageIn) {
+				messageIn.getAuthor().openPrivateChannel().flatMap(
+						channel -> channel.sendMessage(new MessageBuilder().append("K, shutting down...").build()))
+						.complete(); // TODO change this
+				try {
+					KyoBot.ADMINISTRATORS.save();
+				} catch (IOException e) {
+					LOGGER.error("Failed to save admins:");
+					e.printStackTrace();
+				}
+				try {
+					KyoBot.GUILD_NAMES.save();
+				} catch (IOException e) {
+					LOGGER.error("Failed to save guild names:");
+					e.printStackTrace();
+				}
+				try {
+					KyoBot.CHANNEL_NAMES.save();
+				} catch (IOException e) {
+					LOGGER.error("Failed to save channel names:");
+					e.printStackTrace();
+				}
+				JDA jda = KyoBot.jda;
+				jda.shutdownNow();
+				LOGGER.info("Kyo wanna sleep...");
+				return null;
+			}
+
+		};
+
+		abstract Message process(Message messageIn);
+
+		@Nullable
+		public static BotCommand get(String name) {
+			try {
+				return BotCommand.valueOf(name);
+			} catch (IllegalArgumentException e) {
+				return null;
+			}
 		}
-		author.openPrivateChannel().flatMap(channel -> channel.sendMessage(HELP_STRING)).queue();
+
+		public final String syntax;
+
+		private BotCommand(String syntaxIn) {
+			this.syntax = syntaxIn;
+		}
+
+		boolean shouldIgnore(Message messageIn) {
+			return !KyoBot.ifAdmin(messageIn);
+		}
 	}
 }
