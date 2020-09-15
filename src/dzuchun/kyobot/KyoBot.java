@@ -336,7 +336,7 @@ public class KyoBot extends ListenerAdapter {
 			LOGGER.error("Failed to save channel names:");
 			e.printStackTrace();
 		}
-		LOGGER.info("Kyo wanna sleep...");
+		LOGGER.info("Hurray! Now you may actually start coding me!");
 	}
 
 	private static void loadHelpString() throws FileNotFoundException {
