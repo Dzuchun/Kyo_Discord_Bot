@@ -225,8 +225,7 @@ public class KyoBot extends ListenerAdapter {
 				break;
 			case "!stop":
 				LOGGER.warn("Admin {}({}) asked me to stop. Stopping...", author.getName(), authorId);
-				author.openPrivateChannel().flatMap(channel -> channel.sendMessage("Bla-bla-bla, im going sleeep..."))
-						.complete();
+				author.openPrivateChannel().flatMap(channel -> channel.sendMessage("K, shutting down...")).complete();
 				stop();
 				break;
 			case "!help":
@@ -336,7 +335,7 @@ public class KyoBot extends ListenerAdapter {
 			LOGGER.error("Failed to save channel names:");
 			e.printStackTrace();
 		}
-		LOGGER.info("Hurray! Now you may actually start coding me!");
+		LOGGER.info("Kyo wanna sleep...");
 	}
 
 	private static void loadHelpString() throws FileNotFoundException {
