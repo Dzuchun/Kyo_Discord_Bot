@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableList;
 
+import dzuchun.util.Administrator;
 import dzuchun.util.ArrayHelper;
 import dzuchun.util.SavedArrayList;
 import net.dv8tion.jda.api.JDA;
@@ -36,59 +37,20 @@ public class KyoBot extends ListenerAdapter {
 
 	static JDA jda = null;
 
-	private static final SavedArrayList<Long> ADMINISTRATORS = new SavedArrayList<Long>(new File("administrators.txt"),
-			s -> {
-				try {
-					return s.readLong();
-				} catch (IOException e1) {
-					e1.printStackTrace();
-					return -1l;
-				}
-			}, (s, l) -> {
-				try {
-					s.writeLong(l);
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			});
+	private static final SavedArrayList<Administrator> ADMINISTRATORS = new SavedArrayList<Administrator>(
+			new File("administrators.txt"), Administrator.class);
 
-	public static List<Long> getAdmins() {
+	public static List<Administrator> getAdmins() {
 		return ImmutableList.copyOf(ADMINISTRATORS);
 	}
 
 	private static String HELP_STRING = "";
 
 	private static final SavedArrayList<GuildName> GUILD_NAMES = new SavedArrayList<GuildName>(
-			new File("guild_names.txt"), s -> {
-				try {
-					return new GuildName(s);
-				} catch (ClassNotFoundException | IOException e1) {
-					e1.printStackTrace();
-					return null;
-				}
-			}, (s, n) -> {
-				try {
-					n.writeTo(s);
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			});
+			new File("guild_names.txt"), GuildName.class);
 
 	private static final SavedArrayList<ChannelName> CHANNEL_NAMES = new SavedArrayList<ChannelName>(
-			new File("channel_names.txt"), s -> {
-				try {
-					return new ChannelName(s);
-				} catch (ClassNotFoundException | IOException e1) {
-					e1.printStackTrace();
-					return null;
-				}
-			}, (s, n) -> {
-				try {
-					n.writeTo(s);
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			});
+			new File("channel_names.txt"), ChannelName.class);
 
 	public static void main(String[] args) throws InterruptedException, IOException {
 		if (args.length < 1 || (args.length < 2 && args[0].equals("_"))) {
@@ -173,11 +135,11 @@ public class KyoBot extends ListenerAdapter {
 	}
 
 	public static boolean ifAdmin(User user) {
-		return ADMINISTRATORS.contains(user.getIdLong());
+		return ADMINISTRATORS.anyMatches(a -> a.id() == user.getIdLong());
 	}
 
 	public static boolean ifAdmin(Message message) {
-		return ADMINISTRATORS.contains(message.getAuthor().getIdLong());
+		return ADMINISTRATORS.anyMatches(a -> a.id() == message.getAuthor().getIdLong());
 	}
 
 	public static String[] getWords(Message messageIn) {
@@ -190,7 +152,7 @@ public class KyoBot extends ListenerAdapter {
 			@Override
 			Message process(Message messageIn) {
 				List<User> mentions = messageIn.getMentionedUsers();
-				mentions.forEach(user -> ADMINISTRATORS.add(user.getIdLong()));
+				mentions.forEach(user -> ADMINISTRATORS.add(new Administrator(user.getIdLong())));
 				String response = String.format("Added ops %s", mentions);
 				LOGGER.debug(response);
 				return new MessageBuilder().append(response).build();
@@ -202,9 +164,8 @@ public class KyoBot extends ListenerAdapter {
 			@Override
 			Message process(Message messageIn) {
 				List<User> mentions = messageIn.getMentionedUsers();
-				ADMINISTRATORS.removeIf(id -> ArrayHelper.map(mentions, User::getIdLong).contains(id)); // TODO
-																										// optimize
-																										// map
+				List<Long> ids = ArrayHelper.map(mentions, User::getIdLong);
+				ADMINISTRATORS.removeIf(a -> ids.contains(a.id()));
 				String response = String.format("Added ops %s", mentions);
 				LOGGER.debug(response);
 				return new MessageBuilder().append(response).build();
@@ -243,7 +204,7 @@ public class KyoBot extends ListenerAdapter {
 					return null;
 				}
 				String name = words[1];
-				CHANNEL_NAMES.removeIf(chName -> chName.name.equals(name));
+				CHANNEL_NAMES.removeIf(chName -> chName.getName().equals(name));
 				String response = String.format("Removed channels with name %s", name);
 				LOGGER.info(response);
 				return new MessageBuilder().append(response).build();
@@ -279,12 +240,12 @@ public class KyoBot extends ListenerAdapter {
 					LOGGER.warn(response);
 					return new MessageBuilder().append(response).build();
 				}
-				if (!CHANNEL_NAMES.anyMatches(n -> n.name.equals(words[1]))) {
+				if (!CHANNEL_NAMES.anyMatches(n -> n.getName().equals(words[1]))) {
 					String response = String.format("Specified channel name does not exist: %s", words[1]);
 					LOGGER.warn(response);
 					return new MessageBuilder().append(response).build();
 				}
-				TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.name.equals(words[1])).getChannel(jda);
+				TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.getName().equals(words[1])).getChannel(jda);
 				Coords coords = new Coords(words[2]);
 				if (coords.message == null) {
 					String response = String.format("Invalid message link: %s", words[2]);
@@ -318,12 +279,12 @@ public class KyoBot extends ListenerAdapter {
 					LOGGER.warn(response);
 					return new MessageBuilder().append(response).build();
 				}
-				if (!CHANNEL_NAMES.anyMatches(n -> n.name.equals(words[1]))) {
+				if (!CHANNEL_NAMES.anyMatches(n -> n.getName().equals(words[1]))) {
 					String response = String.format("Specified channel name does not exist: %s", words[1]);
 					LOGGER.warn(response);
 					return new MessageBuilder().append(response).build();
 				}
-				TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.name.equals(words[1])).getChannel(jda);
+				TextChannel channel = CHANNEL_NAMES.getMatches(n -> n.getName().equals(words[1])).getChannel(jda);
 				Coords coords = new Coords(words[2]);
 				if (coords.message == null) {
 					String response = String.format("Invalid message link: %s", words[2]);

@@ -8,36 +8,33 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
-import java.util.function.BiConsumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SavedArrayList<T> extends ArrayList<T> {
+public class SavedArrayList<T extends SavedObject> extends ArrayList<T> {
 	@SuppressWarnings("unused")
 	private static final Logger LOGGER = LoggerFactory.getILoggerFactory().getLogger("Coords");
 
 	private static final long serialVersionUID = 1L;
 
-	public File saveFile;
-	protected Function<ObjectInputStream, T> readFunction;
-	protected BiConsumer<ObjectOutputStream, T> writeFunction;
+	private final File saveFile;
+	private final Class<T> classV;
 
-	public SavedArrayList(File saveFileIn, Function<ObjectInputStream, T> readFunctionIn,
-			BiConsumer<ObjectOutputStream, T> writeFunctionIn) {
+	public SavedArrayList(File saveFileIn, Class<T> classIn) {
 		super();
 		this.saveFile = saveFileIn;
-		this.readFunction = readFunctionIn;
-		this.writeFunction = writeFunctionIn;
+		this.classV = classIn;
 	}
 
 	public void save() throws IOException {
 		FileOutputStream saver = new FileOutputStream(this.saveFile);
 		ObjectOutputStream saverStream = new ObjectOutputStream(saver);
 		saverStream.writeInt(this.size());
-		this.forEach(t -> this.writeFunction.accept(saverStream, t));
+		for (T t : this) {
+			t.save(saverStream);
+		}
 		saverStream.close();
 	}
 
@@ -50,10 +47,12 @@ public class SavedArrayList<T> extends ArrayList<T> {
 			reader = new ObjectInputStream(new FileInputStream(this.saveFile));
 			int size = reader.readInt();
 			for (int i = 0; i < size; i++) {
-				this.add(this.readFunction.apply(reader));
+				T t = classV.newInstance();
+				t.read(reader);
+				this.add(t);
 			}
 			reader.close();
-		} catch (EOFException e) {
+		} catch (EOFException | InstantiationException | IllegalAccessException e) {
 			if (reader != null) {
 				reader.close();
 			}

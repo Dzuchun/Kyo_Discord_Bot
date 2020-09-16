@@ -4,33 +4,30 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
+import dzuchun.util.Mapping;
 import net.dv8tion.jda.api.JDA;
-import net.dv8tion.jda.api.entities.TextChannel;
+import net.dv8tion.jda.api.entities.Guild;
 
-public class GuildName {
-	public final String name;
-	public final Long guildId;
+public class GuildName extends Mapping<Long> {
 
-	public GuildName(ObjectInputStream stream) throws IOException, ClassNotFoundException {
-		this((String) stream.readObject(), stream.readLong());
-	}
-
-	public GuildName(String nameIn, Long guildIdIn) {
-		this.name = nameIn;
-		this.guildId = guildIdIn;
-	}
-
-	public TextChannel getChannel(JDA jda) {
-		return jda.getTextChannelById(this.guildId);
-	}
-
-	public void writeTo(ObjectOutputStream stream) throws IOException {
-		stream.writeObject(this.name);
-		stream.writeLong(this.guildId);
+	public Guild getGuild(JDA jda) {
+		return jda.getGuildById(this.object);
 	}
 
 	@Override
 	public String toString() {
-		return String.format("GuildName[%s-%s]", this.name, this.guildId);
+		return String.format("GuildName[%s-%s]", this.name, this.object);
+	}
+
+	@Override
+	public void read(ObjectInputStream streamIn) throws IOException {
+		super.read(streamIn);
+		this.object = streamIn.readLong();
+	}
+
+	@Override
+	public void save(ObjectOutputStream streamIn) throws IOException {
+		super.save(streamIn);
+		streamIn.writeLong(this.object);
 	}
 }
