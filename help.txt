@@ -6,6 +6,7 @@ Wanna some help? Here you go:
 !rChN <name> - Remove channel name
 !dChN - Display all channel names
 !sDel <chat name> <messageLink> <delay> - Send delayed
+!rDel [number] - Remove delayed message
 !sSch <chat name> <messageLink> <time> - Send scheduled
 !nMes <message> - [DEBUG] Name message
 !intL <message link> - [DEBUG] Interprate message link
