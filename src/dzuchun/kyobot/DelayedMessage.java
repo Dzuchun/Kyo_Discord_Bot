@@ -73,7 +73,8 @@ public class DelayedMessage implements SavedObject {
 
 	@Override
 	public String toString() {
-		return String.format("DelayedMessage[time=%s, type=%s, text=\"%s\"]", publicationTime, type, message);
+		return String.format("DelayedMessage[time=%s(in %ss), type=%s, text=\"%s\"]", publicationTime,
+				(publicationTime - System.currentTimeMillis()) / 1000, type, message);
 	}
 
 	public enum Type {

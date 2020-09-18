@@ -268,7 +268,7 @@ public class KyoBot extends ListenerAdapter {
 				List<User> mentions = messageIn.getMentionedUsers();
 				List<Long> ids = ArrayHelper.map(mentions, User::getIdLong);
 				ADMINISTRATORS.removeIf(a -> ids.contains(a.id()));
-				String response = String.format("Added ops %s", mentions);
+				String response = String.format("Removed ops %s", mentions);
 				LOGGER.debug(response);
 				return new MessageBuilder().append(response).build();
 			}
