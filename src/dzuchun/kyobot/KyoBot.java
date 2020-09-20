@@ -24,10 +24,14 @@ import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.MessageBuilder;
 import net.dv8tion.jda.api.entities.Activity;
+import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.TextChannel;
 import net.dv8tion.jda.api.entities.User;
+import net.dv8tion.jda.api.events.guild.voice.GuildVoiceSelfMuteEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
+import net.dv8tion.jda.api.exceptions.HierarchyException;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 
 public class KyoBot extends ListenerAdapter {
@@ -123,7 +127,6 @@ public class KyoBot extends ListenerAdapter {
 				TOKEN = tokenSearcher.nextLine();
 				tokenSearcher.close();
 			} else {
-//				LOGGER.info("Specify API token: ");
 				TOKEN = args[1];
 			}
 			jda = JDABuilder.createDefault(TOKEN).addEventListeners(new KyoBot()).setActivity(Activity.listening("HTT"))
@@ -142,7 +145,7 @@ public class KyoBot extends ListenerAdapter {
 				Thread.sleep(10);
 				System.exit(-2);
 			}
-			loadHelpString();
+			genHelpString();
 			try {
 				GUILD_NAMES.load();
 				if (GUILD_NAMES.isEmpty()) {
@@ -193,19 +196,18 @@ public class KyoBot extends ListenerAdapter {
 		LOGGER.info("Kyo logged in!");
 	}
 
+	private static final String COMMAND_PREFIX = "^";
+
 	@Override
 	public void onMessageReceived(MessageReceivedEvent event) {
 		super.onMessageReceived(event);
-//		if ((event.getChannelType() == ChannelType.PRIVATE) && !jda.getPrivateChannels().contains(event.getChannel())) {
-//			LOGGER.error("Hurray, recieved message in non-existent private channel");
-//		}
 		Message message = event.getMessage();
 		String content = message.getContentDisplay();
-		if ((content.charAt(0) != '!') || content.length() < 2) {
+		if (!(content.startsWith(COMMAND_PREFIX)) || content.length() < COMMAND_PREFIX.length() + 1) {
 			return;
 		}
 
-		BotCommand command = BotCommand.get(content.split(" ")[0].substring(1));
+		BotCommand command = BotCommand.get(content.split(" ")[0].substring(COMMAND_PREFIX.length()));
 
 		command = command == null ? BotCommand.help : command;
 
@@ -222,18 +224,23 @@ public class KyoBot extends ListenerAdapter {
 		}
 	}
 
-	private static void loadHelpString() throws FileNotFoundException {
-		File helpStringFile = new File("help.txt");
-		if (!helpStringFile.exists()) {
-			LOGGER.debug("\"help.txt\" file does not exist");
-		} else {
-			Scanner helpSearcher = new Scanner(helpStringFile);
-			HELP_STRING = "";
-			while (helpSearcher.hasNext()) {
-				HELP_STRING += helpSearcher.nextLine() + "\n";
-			}
-			helpSearcher.close();
+	private static void genHelpString() throws FileNotFoundException {
+//		File helpStringFile = new File("help.txt");
+//		if (!helpStringFile.exists()) {
+//			LOGGER.debug("\"help.txt\" file does not exist");
+//		} else {
+//			Scanner helpSearcher = new Scanner(helpStringFile);
+//			HELP_STRING = "";
+//			while (helpSearcher.hasNext()) {
+//				HELP_STRING += helpSearcher.nextLine() + "\n";
+//			}
+//			helpSearcher.close();
+//		}
+		StringBuilder builder = new StringBuilder();
+		for (BotCommand comm : BotCommand.values()) {
+			builder.append(comm.syntax).append("\n");
 		}
+		HELP_STRING = builder.toString();
 	}
 
 	public static boolean ifAdmin(User user) {
@@ -274,7 +281,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		aChN("!aCh <message link> <name>, example: !aCh https://discordapp.com/channels/a1/a2/a3 news, where a1, a2, a3 are IDs. Note:[WIP] multiple channels can be assigned to a single name") {
+		aChN("!aCh <message link> <name>, example: !aCh https:/ /discord... /a1/a2/a3 news, where a1, a2, a3 are IDs. Note:[WIP] multiple channels can be assigned to a single name") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -326,7 +333,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		sDel("!sDel <channel name> <message link> <delay>, example: !sDel news https://discordapp.com/channels/a1/a2/a3 10, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
+		sDel("!sDel <channel name> <message link> <delay>, example: !sDel news https:/ /discord... /a1/a2/a3 10, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -406,7 +413,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		sSch("!sSch <channel name> <message link> <date>, example: !sDel news https://discordapp.com/channels/a1/a2/a3 2020/04/02_07:45:34, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
+		sSch("!sSch <channel name> <message link> <date>, example: !sDel news https:/ /discord... /a1/a2/a3 2020/04/02_07:45:34, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -540,6 +547,31 @@ public class KyoBot extends ListenerAdapter {
 
 		boolean shouldIgnore(Message messageIn) {
 			return !KyoBot.ifAdmin(messageIn);
+		}
+	}
+
+	private static final String MUTED_POSTFIX = "(F)";
+
+	@Override
+	public void onGuildVoiceSelfMute(GuildVoiceSelfMuteEvent event) {
+		super.onGuildVoiceSelfMute(event);
+		Member member = event.getMember();
+		Guild guild = event.getGuild();
+		String name = member.getEffectiveName();
+		Boolean muted = event.isSelfMuted();
+		LOGGER.info("Member - {}, guild - {}, name - {}, muted - {}", member, guild, name, muted);
+//		if (name == null) {
+//			name = member.getname
+//		}
+		if (muted && !name.endsWith(MUTED_POSTFIX)) {
+			name += MUTED_POSTFIX;
+		} else if (!muted && name.endsWith(MUTED_POSTFIX)) {
+			name = name.substring(0, name.length() - MUTED_POSTFIX.length());
+		}
+		try {
+			guild.modifyNickname(member, name).complete();
+		} catch (HierarchyException e) {
+			LOGGER.warn("Could not modify nickname: {}", e.toString());
 		}
 	}
 }
