@@ -37,6 +37,8 @@ import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.exceptions.HierarchyException;
 import net.dv8tion.jda.api.exceptions.InsufficientPermissionException;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.requests.GatewayIntent;
+import net.dv8tion.jda.api.utils.MemberCachePolicy;
 import net.dv8tion.jda.internal.entities.GuildVoiceStateImpl;
 
 public class KyoBot extends ListenerAdapter {
@@ -137,8 +139,11 @@ public class KyoBot extends ListenerAdapter {
 			} else {
 				TOKEN = args[1];
 			}
-			jda = JDABuilder.createDefault(TOKEN).addEventListeners(new KyoBot()).setActivity(Activity.listening("HTT"))
-					.build();
+			jda = JDABuilder
+					.createDefault(TOKEN, GatewayIntent.DIRECT_MESSAGES, GatewayIntent.GUILD_MEMBERS,
+							GatewayIntent.GUILD_MESSAGES, GatewayIntent.GUILD_VOICE_STATES, GatewayIntent.GUILD_MEMBERS)
+					.addEventListeners(new KyoBot()).setActivity(Activity.listening("HTT"))
+					.setMemberCachePolicy(MemberCachePolicy.ALL).build();
 			jda.awaitReady();
 			try {
 				ADMINISTRATORS.load();
@@ -156,6 +161,9 @@ public class KyoBot extends ListenerAdapter {
 			genHelpString();
 			try {
 				GUILD_NAMES.load();
+				GUILD_NAMES.forEach(name -> {
+					name.getGuild(jda).loadMembers().get();
+				});
 				if (GUILD_NAMES.isEmpty()) {
 					LOGGER.info("No guild names loaded");
 				} else {
@@ -594,7 +602,10 @@ public class KyoBot extends ListenerAdapter {
 							.append("No gluid with such a name. Use ^dGlN to display all guild names").build();
 				}
 				Guild guild = guildName.getGuild(jda);
-				guild.getMembers().forEach(member -> {
+				List<Member> members = guild.getMembers();
+				LOGGER.debug("Members of the guild {} are:\n{} Total - {}", guild,
+						ArrayHelper.iterableToString(members, (member) -> member.toString() + "\n"), members.size());
+				members.forEach(member -> {
 					String memname = member.getNickname();
 					if (memname != null) {
 						if (memname.endsWith(MUTED_POSTFIX)) {
@@ -605,7 +616,11 @@ public class KyoBot extends ListenerAdapter {
 							} catch (InsufficientPermissionException | HierarchyException e) {
 								LOGGER.info("Failed to modify {}'s name, due to lack of permission rights.", member);
 							}
+						} else {
+							LOGGER.debug("{}'s name {} does not end with muted suffix, skipping", member, memname);
 						}
+					} else {
+						LOGGER.debug("{}'s memname is null, skipping", member);
 					}
 				});
 				String response = String.format("Succesfully removed muted postixes in guild %s", guild);
