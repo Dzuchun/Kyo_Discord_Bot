@@ -10,6 +10,14 @@ import net.dv8tion.jda.api.entities.Guild;
 
 public class GuildName extends Mapping<Long> {
 
+	public GuildName() {
+	}
+
+	public GuildName(String nameIn, Long id) {
+		super(nameIn);
+		this.object = id;
+	}
+
 	public Guild getGuild(JDA jda) {
 		return jda.getGuildById(this.object);
 	}

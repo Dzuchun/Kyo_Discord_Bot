@@ -29,10 +29,15 @@ import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.TextChannel;
 import net.dv8tion.jda.api.entities.User;
+import net.dv8tion.jda.api.entities.VoiceChannel;
+import net.dv8tion.jda.api.events.guild.voice.GuildVoiceJoinEvent;
+import net.dv8tion.jda.api.events.guild.voice.GuildVoiceLeaveEvent;
 import net.dv8tion.jda.api.events.guild.voice.GuildVoiceSelfMuteEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.exceptions.HierarchyException;
+import net.dv8tion.jda.api.exceptions.InsufficientPermissionException;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.internal.entities.GuildVoiceStateImpl;
 
 public class KyoBot extends ListenerAdapter {
 
@@ -115,6 +120,9 @@ public class KyoBot extends ListenerAdapter {
 
 	private static final DelayedMessagesThread DELAYED_MESSAGES_THREAD = new DelayedMessagesThread();
 
+	private static final SavedArrayList<StreamingChannel> STREAMING_CHANNELS = new SavedArrayList<StreamingChannel>(
+			new File("streaming_channels.botdata"), StreamingChannel.class);
+
 	public static void main(String[] args) throws InterruptedException {
 		if (args.length < 1 || (args.length < 2 && args[0].equals("_"))) {
 			LOGGER.error("You must specify path to file with API token, or \"_\" and specify it as second argument");
@@ -179,6 +187,18 @@ public class KyoBot extends ListenerAdapter {
 				}
 			} catch (IOException e) {
 				LOGGER.error("Could not load delayed messages:");
+				e.printStackTrace();
+				Thread.sleep(10);
+			}
+			try {
+				STREAMING_CHANNELS.load();
+				if (STREAMING_CHANNELS.isEmpty()) {
+					LOGGER.info("No streaming channels loaded");
+				} else {
+					LOGGER.info("Loaded streaming channels:\n{}", STREAMING_CHANNELS.toString());
+				}
+			} catch (IOException e) {
+				LOGGER.error("Could not load streaming channels:");
 				e.printStackTrace();
 				Thread.sleep(10);
 			}
@@ -256,7 +276,7 @@ public class KyoBot extends ListenerAdapter {
 	}
 
 	enum BotCommand {
-		aOp("!aOp <mentions>, example: !aOp @Dzuchun") {
+		aOp("^aOp <mentions>, example: ^aOp @Dzuchun") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -268,7 +288,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		rOp("!rOp <mentions>, example: !rOp @Code_Bullet :)") {
+		rOp("^rOp <mentions>, example: ^rOp @Code_Bullet :)") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -281,7 +301,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		aChN("!aCh <message link> <name>, example: !aCh https:/ /discord... /a1/a2/a3 news, where a1, a2, a3 are IDs. Note:[WIP] multiple channels can be assigned to a single name") {
+		aChN("^aCh <message link> <name>, example: ^aCh https:/ /discord... /a1/a2/a3 news, where a1, a2, a3 are IDs. Note:[WIP] multiple channels can be assigned to a single name") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -304,7 +324,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		rChN("!rCh <name>, example: !rCh news. Note:[WIP] multiple channels can be assigned to a single name") {
+		rChN("^rCh <name>, example: ^rCh news. Note:[WIP] multiple channels can be assigned to a single name") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -320,7 +340,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		dChN("!dChN") {
+		dChN("^dChN <name>. Note:[WIP] multiple channels can be assigned to a single name") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -333,7 +353,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		sDel("!sDel <channel name> <message link> <delay>, example: !sDel news https:/ /discord... /a1/a2/a3 10, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
+		sDel("^sDel <channel name> <message link> <delay>, example: !sDel news https:/ /discord... /a1/a2/a3 10, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -380,7 +400,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		rDel("!rDel [number of delayed message in list]") {
+		rDel("^rDel [number of delayed message in list]") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -413,7 +433,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		sSch("!sSch <channel name> <message link> <date>, example: !sDel news https:/ /discord... /a1/a2/a3 2020/04/02_07:45:34, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
+		sSch("^sSch <channel name> <message link> <date>, example: ^sDel news https:/ /discord... /a1/a2/a3 2020/04/02_07:45:34, where a1, a2, a3 are IDs. WARN: known bug, links to messages from private chats are not recognised.") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -459,14 +479,149 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		help("!help, or anything started with \"!\", but not recognized as command") {
+		streammode("^streammode - toggles stream mode ") {
+
+			@Override
+			Message process(Message messageIn) {
+				User user = messageIn.getAuthor();
+				Guild guild = messageIn.getGuild();
+				if (user == null || guild == null)
+					return null;
+				Member member = guild.getMember(user);
+				if (member == null)
+					return null;
+				VoiceChannel channel = member.getVoiceState().getChannel();
+				if (channel == null)
+					return null;
+				String response;
+				if (!STREAMING_CHANNELS.removeIf(streaming -> streaming.getChannel(jda).equals(channel))) {
+					STREAMING_CHANNELS.add(new StreamingChannel(channel));
+					response = String.format("Added %s to streaming channels", channel);
+					for (Member channelMember : channel.getMembers()) {
+						try {
+							GuildVoiceStateImpl state = (GuildVoiceStateImpl) channelMember.getVoiceState();
+							state.setGuildMuted(true);
+							LOGGER.debug("Muted {}", channelMember);
+						} catch (InsufficientPermissionException e) {
+							LOGGER.info("Could not mute {}", channelMember);
+						} catch (ClassCastException e) {
+							LOGGER.info("Member's state is {}, so can't mute",
+									member.getVoiceState().getClass().getName());
+						}
+					}
+				} else {
+					response = String.format("Removed %s from streaming channels", channel);
+					for (Member channelMember : channel.getMembers()) {
+						try {
+							GuildVoiceStateImpl state = (GuildVoiceStateImpl) channelMember.getVoiceState();
+							state.setGuildMuted(false);
+							LOGGER.debug("Unmuted {}", channelMember);
+						} catch (InsufficientPermissionException e) {
+							LOGGER.info("Could not unmute {}", channelMember);
+						} catch (ClassCastException e) {
+							LOGGER.info("Member's state is {}, so can't mute",
+									member.getVoiceState().getClass().getName());
+						}
+					}
+				}
+				LOGGER.debug(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		aGlN("^aGlN <message link> <name>, example: ^aGlN https:/ /discord... /a1/a2/a3 school, where a1, a2, a3 are IDs. Note:[WIP] multiple guilds can be assigned to a single name") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = getWords(messageIn);
+				if (words.length < 3) {
+					return null;
+				}
+				String link = words[1];
+				Coords coords = new Coords(link);
+				if (coords.guild == null) {
+					LOGGER.warn("Message is not from a guild, or link is invalid: {}", link);
+					return new MessageBuilder().append("Message is not from a guild, or link is invalid:").append(link)
+							.build();
+				} else {
+					String name = words[2];
+					GUILD_NAMES.add(new GuildName(name, coords.guild.getIdLong()));
+					String response = String.format("Added guild %s to names as %s", coords.guild, name);
+					LOGGER.info(response);
+					return new MessageBuilder().append(response).build();
+				}
+			}
+
+		},
+		rGlN("^rGlN <name>, example: ^rGlN school. Note:[WIP] multiple guilds can be assigned to a single name") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = getWords(messageIn);
+				if (words.length < 2) {
+					return null;
+				}
+				String name = words[1];
+				GUILD_NAMES.removeIf(glName -> glName.getName().equals(name));
+				String response = String.format("Removed guilds with name %s", name);
+				LOGGER.info(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		dGlN("^dGlN. Displays gluid names list") {
+
+			@Override
+			Message process(Message messageIn) {
+				MessageBuilder res = new MessageBuilder();
+				res.append("Guild names:\n");
+				for (GuildName name : GUILD_NAMES) {
+					res.append(name.toString()).append("\n");
+				}
+				return res.build();
+			}
+
+		},
+		clearf("^clearf <gluid name>. Example: ^clearf ") {
+
+			@Override
+			Message process(Message messageIn) {
+				String[] words = getWords(messageIn);
+				String name = words[1];
+				GuildName guildName = GUILD_NAMES.getMatches(glName -> glName.getName().equals(name));
+				if (guildName == null) {
+					return new MessageBuilder()
+							.append("No gluid with such a name. Use ^dGlN to display all guild names").build();
+				}
+				Guild guild = guildName.getGuild(jda);
+				guild.getMembers().forEach(member -> {
+					String memname = member.getNickname();
+					if (memname != null) {
+						if (memname.endsWith(MUTED_POSTFIX)) {
+							memname = memname.substring(0, memname.length() - MUTED_POSTFIX.length());
+							try {
+								member.modifyNickname(memname).complete();
+								LOGGER.info("Removed muted postfix from {}'s name", member);
+							} catch (InsufficientPermissionException | HierarchyException e) {
+								LOGGER.info("Failed to modify {}'s name, due to lack of permission rights.", member);
+							}
+						}
+					}
+				});
+				String response = String.format("Succesfully removed muted postixes in guild %s", guild);
+				LOGGER.info(response);
+				return new MessageBuilder().append(response).build();
+			}
+
+		},
+		help("^help, or anything started with \"^\", but not recognized as command") {
 
 			@Override
 			Message process(Message messageIn) {
 				return new MessageBuilder().append(KyoBot.HELP_STRING).build();
 			}
 		},
-		syn("!syn <command main literal>, example: !syn aOp") {
+		syn("^syn <command main literal>, example: ^syn aOp") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -478,7 +633,7 @@ public class KyoBot extends ListenerAdapter {
 			}
 
 		},
-		stop("!stop") {
+		stop("^stop") {
 
 			@Override
 			Message process(Message messageIn) {
@@ -513,6 +668,13 @@ public class KyoBot extends ListenerAdapter {
 					LOGGER.info("Saved delayed messages");
 				} catch (IOException e) {
 					LOGGER.error("Failed to save delayed messages:");
+					e.printStackTrace();
+				}
+				try {
+					KyoBot.STREAMING_CHANNELS.save();
+					LOGGER.info("Saved streaming channels");
+				} catch (IOException e) {
+					LOGGER.error("Failed to save streaming channels:");
 					e.printStackTrace();
 				}
 				DELAYED_MESSAGES_THREAD.keepRunning = false;
@@ -572,6 +734,48 @@ public class KyoBot extends ListenerAdapter {
 			guild.modifyNickname(member, name).complete();
 		} catch (HierarchyException e) {
 			LOGGER.warn("Could not modify nickname: {}", e.toString());
+		}
+	}
+
+	@Override
+	public void onGuildVoiceJoin(GuildVoiceJoinEvent event) {
+		super.onGuildVoiceJoin(event);
+		VoiceChannel channel = event.getChannelJoined();
+		if (channel == null)
+			return;
+		long id = channel.getIdLong();
+		if (STREAMING_CHANNELS.anyMatches(streaming -> streaming.getId() == id)) {
+			Member member = event.getMember();
+			if (member == null)
+				return;
+			try {
+				GuildVoiceStateImpl state = (GuildVoiceStateImpl) member.getVoiceState();
+				state.setGuildMuted(true);
+				LOGGER.debug("Muted {}", member);
+			} catch (ClassCastException e) {
+				LOGGER.info("Member's state is {}, so can't mute", member.getVoiceState().getClass().getName());
+			}
+		}
+	}
+
+	@Override
+	public void onGuildVoiceLeave(GuildVoiceLeaveEvent event) {
+		super.onGuildVoiceLeave(event);
+		VoiceChannel channel = event.getChannelLeft();
+		if (channel == null)
+			return;
+		long id = channel.getIdLong();
+		if (STREAMING_CHANNELS.anyMatches(streaming -> streaming.getId() == id)) {
+			Member member = event.getMember();
+			if (member == null)
+				return;
+			try {
+				GuildVoiceStateImpl state = (GuildVoiceStateImpl) member.getVoiceState();
+				state.setGuildMuted(false);
+				LOGGER.debug("Unmuted {}", member);
+			} catch (ClassCastException e) {
+				LOGGER.info("Member's state is {}, so can't unmute", member.getVoiceState().getClass().getName());
+			}
 		}
 	}
 }
